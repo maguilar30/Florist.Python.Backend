@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from app.deps import AdminUser, CurrentCompany, CurrentUser, DbSession
 from app.errors import problem
-from app.loyalty import get_reward, redemption_count, star_count, validate_reward_payload
+from app.loyalty import get_reward, member_order_stats, redemption_count, star_count, validate_reward_payload
 from app.models.loyalty import LoyaltyReward
 from app.models.user import User
 from app.schemas.loyalty import (
@@ -77,20 +77,32 @@ def loyalty_for_account(
 
 @router.get("/members", response_model=list[LoyaltyMemberOut])
 def list_loyalty_members(_admin: AdminUser, db: DbSession, company: CurrentCompany) -> list[LoyaltyMemberOut]:
-    users = db.scalars(
-        select(User)
-        .where(User.company_id == company.id)
-        .order_by(User.full_name.asc(), User.email.asc())
-    )
+    stats = member_order_stats(db, company.id)
+    user_ids = [user_id for user_id, (_orders, stars, _spent) in stats.items() if stars > 0]
+    if not user_ids:
+        return []
+    users = {
+        user.id: user
+        for user in db.scalars(select(User).where(User.company_id == company.id, User.id.in_(user_ids)))
+    }
     members: list[LoyaltyMemberOut] = []
-    for user in users:
-        stars = star_count(db, company.id, user.id)
-        if stars <= 0:
+    for user_id in user_ids:
+        user = users.get(user_id)
+        if user is None:
             continue
+        order_count, stars, total_spent = stats[user_id]
         members.append(
-            LoyaltyMemberOut(user_id=user.id, email=user.email, full_name=user.full_name, stars=stars)
+            LoyaltyMemberOut(
+                user_id=user.id,
+                email=user.email,
+                full_name=user.full_name,
+                phone=user.phone,
+                stars=stars,
+                order_count=order_count,
+                total_spent=float(total_spent),
+            )
         )
-    members.sort(key=lambda row: (-row.stars, row.full_name.lower()))
+    members.sort(key=lambda row: (-row.stars, -row.total_spent, row.full_name.lower()))
     return members
 
 

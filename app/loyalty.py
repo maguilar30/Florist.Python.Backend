@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.discount import discount_amount_for
@@ -24,6 +24,26 @@ def validate_reward_payload(*, kind: str, percent: Decimal, max_discount: Decima
         if max_discount <= 0:
             raise problem(400, "El descuento máximo de la recompensa debe ser mayor que cero.")
     return normalized
+
+
+def member_order_stats(db: Session, company_id: str) -> dict[str, tuple[int, int, Decimal]]:
+    delivered = Order.status == COMPLETED_ORDER_STATUS
+    rows = db.execute(
+        select(
+            Order.user_id,
+            func.count(Order.id),
+            func.coalesce(func.sum(case((delivered, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((delivered, Order.total), else_=0)), 0),
+        )
+        .where(Order.company_id == company_id, Order.user_id.is_not(None))
+        .group_by(Order.user_id)
+    )
+    stats: dict[str, tuple[int, int, Decimal]] = {}
+    for user_id, order_count, stars, total_spent in rows:
+        if not user_id:
+            continue
+        stats[str(user_id)] = (int(order_count or 0), int(stars or 0), Decimal(total_spent or 0))
+    return stats
 
 
 def star_count(db: Session, company_id: str, user_id: str) -> int:

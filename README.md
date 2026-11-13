@@ -231,7 +231,7 @@ One row per company (`company_contacts`). Missing rows are created with the defa
 | POST | `/api/discount-codes/preview` | No (optional JWT) |
 | GET | `/api/loyalty/me` | JWT |
 | GET | `/api/loyalty/accounts/{userId}` | Admin |
-| GET | `/api/loyalty/members` | Admin |
+| GET | `/api/loyalty/members` | Admin (users with stars: order count + delivered spend) |
 | GET / POST / PUT / DELETE | `/api/loyalty/rewards` | Admin |
 
 Checkout (`POST`) stores the order, then emails `ORDER_NOTIFY_EMAIL`. The order is saved even if mail fails. Home delivery requires `deliveryAddress`. If the shopper is logged in, the order is linked to their user id. `GET /api/orders/mine` returns orders for that user id **or** the same email as the account (so guest checkouts still appear after they register). Admins can place an order for someone else with `POST /api/orders/admin` (same body plus optional `userId`); the order is linked to that customer account, not the admin, and history records the administrator as the actor.

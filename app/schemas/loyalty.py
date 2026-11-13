@@ -45,4 +45,7 @@ class LoyaltyMemberOut(CamelModel):
     user_id: str
     email: EmailStr
     full_name: str
+    phone: str | None = None
     stars: int
+    order_count: int
+    total_spent: float
