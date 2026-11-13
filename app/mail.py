@@ -10,6 +10,7 @@ from html import escape
 from app.config import get_settings
 from app.delivery import DELIVERY_LABELS
 from app.errors import problem
+from app.order_status import ORDER_STATUS_CUSTOMER_NOTES, order_status_label
 
 logger = logging.getLogger(__name__)
 
@@ -138,29 +139,135 @@ def send_order_notification(
         delivery_fee=delivery_fee,
         lines=lines,
     )
-    to_addr = settings.order_notify_email
+    send_email(
+        to_addr=settings.order_notify_email,
+        subject=subject,
+        text=text,
+        html=html,
+        reply_to=customer_email,
+        purpose="order",
+    )
 
+
+def send_order_status_email(
+    *,
+    order_id: int,
+    customer_name: str,
+    customer_email: str,
+    status: str,
+    total: Decimal,
+) -> None:
+    settings = get_settings()
+    label = order_status_label(status)
+    note = ORDER_STATUS_CUSTOMER_NOTES.get(status, "")
+    account_url = f"{settings.frontend_url.rstrip('/')}/cuenta#pedidos"
+    subject = f"Pedido #{order_id} — {label}"
+    text = (
+        f"Hola {customer_name},\n\n"
+        f"El estado de tu pedido #{order_id} ahora es: {label}.\n"
+        f"{note}\n\n"
+        f"Total: {_money(total)}\n"
+        f"Puedes ver el detalle en tu cuenta:\n{account_url}\n\n"
+        "Floristería Yada\n"
+    )
+    html = f"""
+    <p>Hola {escape(customer_name)},</p>
+    <p>El estado de tu pedido <strong>#{order_id}</strong> ahora es: <strong>{escape(label)}</strong>.</p>
+    <p>{escape(note)}</p>
+    <p>Total: {_money(total)}</p>
+    <p><a href="{escape(account_url)}">Ver mis pedidos</a></p>
+    <p>Floristería Yada</p>
+    """
+    send_email(
+        to_addr=customer_email,
+        subject=subject,
+        text=text,
+        html=html,
+        purpose="order status",
+    )
+
+
+def send_contact_message_email(*, name: str, email: str, body: str, message_id: int | None = None) -> None:
+    settings = get_settings()
+    ref = f"#{message_id} — " if message_id is not None else ""
+    subject = f"Nuevo mensaje de contacto {ref}{name}"
+    id_line = f"Mensaje: #{message_id}\n" if message_id is not None else ""
+    text = (
+        "Se recibió un mensaje desde la página de contacto.\n\n"
+        f"{id_line}"
+        f"Nombre: {name}\n"
+        f"Correo: {email}\n\n"
+        f"{body}\n"
+    )
+    html = f"""
+    <p>Se recibió un mensaje desde la página de contacto.</p>
+    <p>
+      {f'<strong>Mensaje:</strong> #{message_id}<br>' if message_id is not None else ''}
+      <strong>Nombre:</strong> {escape(name)}<br>
+      <strong>Correo:</strong> {escape(email)}
+    </p>
+    <p>{escape(body).replace(chr(10), '<br>')}</p>
+    """
+    send_email(
+        to_addr=settings.order_notify_email,
+        subject=subject,
+        text=text,
+        html=html,
+        reply_to=email,
+        purpose="contact",
+    )
+
+
+def send_password_reset_email(*, to_addr: str, full_name: str, reset_url: str) -> None:
+    subject = "Restablecer tu contraseña — Floristería Yada"
+    text = (
+        f"Hola {full_name},\n\n"
+        "Recibimos una solicitud para restablecer la contraseña de tu cuenta.\n"
+        f"Abre este enlace (válido por una hora):\n{reset_url}\n\n"
+        "Si no pediste este cambio, puedes ignorar este correo.\n"
+    )
+    html = f"""
+    <p>Hola {escape(full_name)},</p>
+    <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en Floristería Yada.</p>
+    <p><a href="{escape(reset_url)}">Restablecer contraseña</a></p>
+    <p>El enlace caduca en una hora. Si no pediste este cambio, ignora este correo.</p>
+    """
+    send_email(to_addr=to_addr, subject=subject, text=text, html=html, purpose="password reset")
+
+
+def send_email(
+    *,
+    to_addr: str,
+    subject: str,
+    text: str,
+    html: str,
+    reply_to: str | None = None,
+    purpose: str = "email",
+) -> None:
+    settings = get_settings()
     if not settings.smtp_host:
         if settings.debug:
-            logger.warning("SMTP is not configured; order email was not delivered.\nTo: %s\n%s\n%s", to_addr, subject, text)
+            logger.warning("SMTP is not configured; %s was not delivered.\nTo: %s\n%s\n%s", purpose, to_addr, subject, text)
             return
-        raise problem(503, "Mail not configured", "Order email cannot be sent until SMTP is configured.")
+        raise problem(503, "Mail not configured", "Email cannot be sent until SMTP is configured.")
 
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = settings.smtp_from or settings.smtp_user or to_addr
     message["To"] = to_addr
-    message["Reply-To"] = customer_email
+    if reply_to:
+        message["Reply-To"] = reply_to
     message.set_content(text)
     message.add_alternative(html, subtype="html")
 
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+            print(settings.smtp_user, settings.smtp_password, to_addr, settings.smtp_use_tls)
             if settings.smtp_use_tls:
                 smtp.starttls()
             if settings.smtp_user:
                 smtp.login(settings.smtp_user, settings.smtp_password)
             smtp.send_message(message)
     except (OSError, smtplib.SMTPException) as exc:
-        logger.exception("Failed to send order email")
-        raise problem(502, "Mail error", "The order email could not be sent. Please try again.") from exc
+        logger.exception("Failed to send %s email", purpose)
+        raise problem(502, "Mail error", "The email could not be sent. Please try again.") from exc

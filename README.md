@@ -51,6 +51,8 @@ Edit `.env` to match your MySQL instance, set a real `JWT_SECRET`, and (for prod
 | `SMTP_FROM` | `Floristería Yada <info@yadacr.com>` | From header |
 | `SMTP_USE_TLS` | `true` | STARTTLS |
 | `ORDER_NOTIFY_EMAIL` | `info@yadacr.com` | Inbox for new order requests |
+| `FRONTEND_URL` | `http://localhost:5173` | Origin used in password-reset links |
+| `PASSWORD_RESET_EXPIRE_MINUTES` | `60` | Reset-link lifetime |
 
 If `SMTP_HOST` is empty and `DEBUG=true`, checkout still succeeds and the email body is written to the server log. In production (`DEBUG=false`), configure SMTP so shop staff receive the notification.
 
@@ -115,9 +117,13 @@ Auth column: **No** = public, **JWT** = any logged-in user, **Admin** = role `Ad
 |--------|------|------|------|
 | POST | `/api/auth/login` | No | `{ "email", "password" }` |
 | POST | `/api/auth/register` | No | `{ "email", "password", "fullName", "phone?" }` |
+| POST | `/api/auth/forgot-password` | No | `{ "email" }` |
+| POST | `/api/auth/reset-password` | No | `{ "token", "password" }` |
 | GET | `/api/auth/me` | JWT | — |
 
 Register requires a password of at least 8 characters. New accounts get role `Customer` and a matching CRM row in `customers`.
+
+Forgot-password always returns the same message (it does not reveal whether the email exists). If the account exists, the API emails a one-hour link to `{FRONTEND_URL}/restablecer-contrasena?token=...`. The raw token is never stored; only a SHA-256 hash is kept in `password_reset_tokens`.
 
 **Login / register response:**
 
@@ -169,16 +175,34 @@ Send the token as `Authorization: Bearer <token>`.
 
 **Customer upsert:** `{ "fullName", "email", "phone?", "address?", "notes?" }`
 
+### Contact messages
+
+| Method | Path | Auth |
+|--------|------|------|
+| POST | `/api/contact-messages` | No |
+| GET | `/api/contact-messages` | Admin |
+| GET | `/api/contact-messages/{id}` | Admin |
+| PATCH | `/api/contact-messages/{id}` | Admin (`{ "read": true }`) |
+| DELETE | `/api/contact-messages/{id}` | Admin |
+
+The public form stores the message, then emails `ORDER_NOTIFY_EMAIL`. The row is kept even if mail fails.
+
+**Create body:** `{ "name", "email", "message" }`
+
 ### Orders
 
 | Method | Path | Auth |
 |--------|------|------|
 | POST | `/api/orders` | No |
+| GET | `/api/orders/mine` | JWT |
+| GET | `/api/orders/mine/{id}` | JWT |
+| GET | `/api/orders/mine/{id}/history` | JWT |
 | GET | `/api/orders` | Admin |
 | GET | `/api/orders/{id}` | Admin |
+| GET | `/api/orders/{id}/history` | Admin |
 | PUT | `/api/orders/{id}` | Admin |
 
-Checkout (`POST`) stores the order, then emails `ORDER_NOTIFY_EMAIL`. The order is saved even if mail fails. Home delivery requires `deliveryAddress`.
+Checkout (`POST`) stores the order, then emails `ORDER_NOTIFY_EMAIL`. The order is saved even if mail fails. Home delivery requires `deliveryAddress`. If the shopper is logged in, the order is linked to their user id. `GET /api/orders/mine` returns orders for that user id **or** the same email as the account (so guest checkouts still appear after they register).
 
 **Checkout body:**
 
@@ -207,7 +231,9 @@ Line prices come from the catalog, not the client. `total` = product subtotal + 
 
 **Order statuses** (admin `PUT`): `payment_pending` (default), `paid`, `preparing`, `ready_for_pickup`, `out_for_delivery`, `delivered`, `cancelled`.
 
-Admin `PUT` may also change contact fields, `deliveryAddress`, `deliveryOption` (recalculates fee and total), `notes`, and `total`.
+Admin `PUT` may also change contact fields, `deliveryAddress`, `deliveryOption` (recalculates fee and total), `notes`, and `total`. When `status` actually changes, the API emails the customer (`customerEmail`) with the new status after the row is saved. The update still succeeds if mail fails.
+
+Order history lives in `order_events`: `created` at checkout, `status_changed` on each admin status update, and `completed` when the status becomes `delivered`. Existing orders are backfilled with a creation event (and a reconstructed status/completion event when needed). Both customers and admins can read the timeline for orders they are allowed to see.
 
 ### Errors
 
@@ -238,8 +264,9 @@ server/
     mail.py          # Order notification email
     delivery.py      # Delivery option fees
     order_status.py  # Order status values
+    order_history.py # Order timeline events
     seed.py          # Catalog seed
-    models/          # users, products, customers, orders, order_items
+    models/          # users, products, customers, orders, order_items, order_events
     schemas/         # Pydantic request/response models
     routers/
       auth.py
@@ -247,6 +274,7 @@ server/
       customers.py
       clients.py
       orders.py
+      contact.py
 ```
 
 ## Data model (MySQL)
@@ -254,7 +282,10 @@ server/
 On startup, SQLAlchemy creates (or extends):
 
 - **users** — accounts (`id` UUID, email, hashed password, role `Admin` or `Customer`)
+- **password_reset_tokens** — hashed, single-use reset links with expiry
 - **products** — catalog (name, description, price, image, category, stock)
 - **customers** — CRM records (name, email, phone, address, notes)
 - **orders** — checkout requests (contact, address, status, delivery option/fee, subtotal, total)
 - **order_items** — line snapshots (product name, quantity, unit price)
+- **order_events** — history (created, status_changed, completed) with actor and timestamp
+- **contact_messages** — contact form submissions (name, email, message, read_at)

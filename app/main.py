@@ -9,9 +9,10 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine, ensure_schema
 from app.errors import http_exception_handler, validation_exception_handler
-from app.models import Order, User
+from app.models import ContactMessage, Order, OrderEvent, PasswordResetToken, User
 from app.routers.auth import router as auth_router
 from app.routers.clients import router as clients_router
+from app.routers.contact import router as contact_router
 from app.routers.customers import router as customers_router
 from app.routers.orders import router as orders_router
 from app.routers.products import router as products_router
@@ -59,6 +60,7 @@ app.include_router(customers_router, prefix=settings.api_prefix)
 app.include_router(clients_router, prefix=settings.api_prefix)
 app.include_router(products_router, prefix=settings.api_prefix)
 app.include_router(orders_router, prefix=settings.api_prefix)
+app.include_router(contact_router, prefix=settings.api_prefix)
 
 
 @app.get("/", tags=["health"])

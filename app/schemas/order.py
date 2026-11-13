@@ -45,6 +45,17 @@ class OrderItemOut(CamelModel):
     line_total: float
 
 
+class OrderEventOut(CamelModel):
+    id: int
+    event_type: str
+    from_status: str | None = None
+    to_status: str | None = None
+    actor_name: str
+    actor_role: str
+    message: str
+    created_at: datetime | None = None
+
+
 class OrderOut(CamelModel):
     id: int
     customer_name: str

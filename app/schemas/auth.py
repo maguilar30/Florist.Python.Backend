@@ -28,3 +28,16 @@ class AuthResponse(CamelModel):
     token: str
     expires_at: datetime
     user: UserOut
+
+
+class ForgotPasswordRequest(CamelModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(CamelModel):
+    token: str = Field(min_length=1)
+    password: str = Field(min_length=8)
+
+
+class MessageResponse(CamelModel):
+    message: str

@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     smtp_from: str = "Floristería Yada <info@yadacr.com>"
     smtp_use_tls: bool = True
     order_notify_email: str = "info@yadacr.com"
+    frontend_url: str = "http://localhost:5173"
+    password_reset_expire_minutes: int = 60
 
     @property
     def database_url(self) -> str:

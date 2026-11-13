@@ -14,24 +14,48 @@ bearer_scheme = HTTPBearer(auto_error=False)
 DbSession = Annotated[Session, Depends(get_db)]
 
 
+def _user_from_credentials(
+    db: Session,
+    credentials: HTTPAuthorizationCredentials | None,
+    *,
+    required: bool,
+) -> User | None:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        if required:
+            raise problem(401, "Unauthorized", "A valid bearer token is required.")
+        return None
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except jwt.ExpiredSignatureError:
+        if required:
+            raise problem(401, "Unauthorized", "The access token has expired.") from None
+        return None
+    except jwt.InvalidTokenError:
+        if required:
+            raise problem(401, "Unauthorized", "The access token is invalid.") from None
+        return None
+
+    user_id = payload.get("sub")
+    user = db.get(User, user_id) if user_id else None
+    if user is None and required:
+        raise problem(401, "Unauthorized", "The user no longer exists.")
+    return user
+
+
 def get_current_user(
     db: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> User:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise problem(401, "Unauthorized", "A valid bearer token is required.")
-    try:
-        payload = decode_access_token(credentials.credentials)
-    except jwt.ExpiredSignatureError:
-        raise problem(401, "Unauthorized", "The access token has expired.") from None
-    except jwt.InvalidTokenError:
-        raise problem(401, "Unauthorized", "The access token is invalid.") from None
-
-    user_id = payload.get("sub")
-    user = db.get(User, user_id) if user_id else None
-    if user is None:
-        raise problem(401, "Unauthorized", "The user no longer exists.")
+    user = _user_from_credentials(db, credentials, required=True)
+    assert user is not None
     return user
+
+
+def get_optional_user(
+    db: DbSession,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+) -> User | None:
+    return _user_from_credentials(db, credentials, required=False)
 
 
 def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
@@ -41,4 +65,5 @@ def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 AdminUser = Annotated[User, Depends(require_admin)]
