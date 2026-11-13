@@ -2,7 +2,7 @@ from fastapi import APIRouter, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.deps import AdminUser, DbSession
+from app.deps import AdminUser, CurrentCompany, DbSession
 from app.errors import problem
 from app.models.customer import Customer
 from app.schemas.customer import CustomerOut, CustomerUpsert
@@ -25,26 +25,34 @@ def _apply(customer: Customer, payload: CustomerUpsert) -> None:
     customer.notes = _clean(payload.notes)
 
 
-def _get_customer(db: DbSession, customer_id: int) -> Customer:
-    customer = db.get(Customer, customer_id)
+def _get_customer(db: DbSession, customer_id: int, company_id: str) -> Customer:
+    customer = db.scalar(
+        select(Customer).where(Customer.id == customer_id, Customer.company_id == company_id)
+    )
     if customer is None:
         raise problem(404, "Not found", "Customer not found.")
     return customer
 
 
 @router.get("", response_model=list[CustomerOut])
-def list_customers(_admin: AdminUser, db: DbSession) -> list[Customer]:
-    return list(db.scalars(select(Customer).order_by(Customer.full_name, Customer.id)))
+def list_customers(_admin: AdminUser, db: DbSession, company: CurrentCompany) -> list[Customer]:
+    return list(
+        db.scalars(
+            select(Customer).where(Customer.company_id == company.id).order_by(Customer.full_name, Customer.id)
+        )
+    )
 
 
 @router.get("/{customer_id}", response_model=CustomerOut)
-def get_customer(customer_id: int, _admin: AdminUser, db: DbSession) -> Customer:
-    return _get_customer(db, customer_id)
+def get_customer(customer_id: int, _admin: AdminUser, db: DbSession, company: CurrentCompany) -> Customer:
+    return _get_customer(db, customer_id, company.id)
 
 
 @router.post("", response_model=CustomerOut, status_code=status.HTTP_201_CREATED)
-def create_customer(payload: CustomerUpsert, _admin: AdminUser, db: DbSession) -> Customer:
-    customer = Customer()
+def create_customer(
+    payload: CustomerUpsert, _admin: AdminUser, db: DbSession, company: CurrentCompany
+) -> Customer:
+    customer = Customer(company_id=company.id)
     _apply(customer, payload)
     db.add(customer)
     try:
@@ -62,8 +70,9 @@ def update_customer(
     payload: CustomerUpsert,
     _admin: AdminUser,
     db: DbSession,
+    company: CurrentCompany,
 ) -> Customer:
-    customer = _get_customer(db, customer_id)
+    customer = _get_customer(db, customer_id, company.id)
     _apply(customer, payload)
     try:
         db.commit()
@@ -75,7 +84,7 @@ def update_customer(
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_customer(customer_id: int, _admin: AdminUser, db: DbSession) -> None:
-    customer = _get_customer(db, customer_id)
+def delete_customer(customer_id: int, _admin: AdminUser, db: DbSession, company: CurrentCompany) -> None:
+    customer = _get_customer(db, customer_id, company.id)
     db.delete(customer)
     db.commit()

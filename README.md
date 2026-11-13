@@ -19,7 +19,7 @@ GRANT ALL PRIVILEGES ON yada_shop.* TO 'yada'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-Tables are created automatically on first startup. Extra order columns (`subtotal`, `delivery_option`, `delivery_fee`) are added if missing. If `users` is empty, an **Admin** account is seeded from `.env`. If `products` is empty, a small catalog is seeded.
+Tables are created automatically on first startup, including a `companies` table. Existing rows are backfilled with the default company. Extra order columns (`subtotal`, `delivery_option`, `delivery_fee`) are added if missing. If that company has no users, an **Admin** account is seeded from `.env`. If it has no products, a small catalog is seeded.
 
 ### 2. Configure environment
 
@@ -44,6 +44,8 @@ Edit `.env` to match your MySQL instance, set a real `JWT_SECRET`, and (for prod
 | `API_PREFIX` | `/api` | Route prefix |
 | `ADMIN_EMAIL` | `admin@yadacr.com` | Seeded admin (empty DB only) |
 | `ADMIN_PASSWORD` | `YadaAdmin123!` | Seeded admin password |
+| `DEFAULT_COMPANY_SLUG` | `yada` | Public company identifier (`X-Company-Id`) |
+| `DEFAULT_COMPANY_NAME` | `Floristería Yada` | Display name for the default company |
 | `DEBUG` | `true` in example | SQL echo, FastAPI debug, log order emails if SMTP is unset |
 | `SMTP_HOST` | (empty) | SMTP server; required in production to send order mail |
 | `SMTP_PORT` | `587` | SMTP port |
@@ -85,6 +87,7 @@ The Vite app proxies `/api` to port **5000**. In `../client`, copy `.env.example
 ```env
 VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:5000
+VITE_COMPANY_ID=yada
 ```
 
 Then:
@@ -100,6 +103,10 @@ Open [http://localhost:5173](http://localhost:5173) and use **Entrar** with the 
 ## HTTP API
 
 Auth column: **No** = public, **JWT** = any logged-in user, **Admin** = role `Admin`.
+
+Every `/api/*` route requires the header **`X-Company-Id`** with the company slug (for example `yada`). Data is isolated per company: users, products, customers, orders, order items/events, password-reset tokens, and contact messages all store `company_id`. Email uniqueness is per company. The health check `GET /` does not need the header.
+
+To serve another shop, insert a row in `companies` and point a second SPA at that slug with `VITE_COMPANY_ID`.
 
 ### Health
 
@@ -135,7 +142,8 @@ Forgot-password always returns the same message (it does not reveal whether the 
     "id": "uuid",
     "email": "admin@yadacr.com",
     "fullName": "Administrador Yada",
-    "roles": ["Admin"]
+    "roles": ["Admin"],
+    "companyId": "uuid-of-company"
   }
 }
 ```
@@ -187,7 +195,18 @@ Send the token as `Authorization: Bearer <token>`.
 
 The public form stores the message, then emails `ORDER_NOTIFY_EMAIL`. The row is kept even if mail fails.
 
-**Create body:** `{ "name", "email", "message" }`
+**Create body:** `{ "name", "email", "phone", "message" }`
+
+### Shop contact details
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/contact-info` | No (`X-Company-Id` required) |
+| PUT | `/api/contact-info` | Admin |
+
+One row per company (`company_contacts`). Missing rows are created with the default Floristería Yada details. Admins edit heading, description, address, phone, hours, email, and Instagram / Facebook / WhatsApp URLs. The SPA contact page and footer read this payload.
+
+**Update body:** `{ "heading", "description?", "address?", "phone?", "hours?", "email?", "instagramUrl?", "facebookUrl?", "whatsappUrl?" }`
 
 ### Orders
 

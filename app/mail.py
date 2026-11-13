@@ -187,7 +187,9 @@ def send_order_status_email(
     )
 
 
-def send_contact_message_email(*, name: str, email: str, body: str, message_id: int | None = None) -> None:
+def send_contact_message_email(
+    *, name: str, email: str, phone: str = "", body: str, message_id: int | None = None
+) -> None:
     settings = get_settings()
     ref = f"#{message_id} — " if message_id is not None else ""
     subject = f"Nuevo mensaje de contacto {ref}{name}"
@@ -196,7 +198,8 @@ def send_contact_message_email(*, name: str, email: str, body: str, message_id: 
         "Se recibió un mensaje desde la página de contacto.\n\n"
         f"{id_line}"
         f"Nombre: {name}\n"
-        f"Correo: {email}\n\n"
+        f"Correo: {email}\n"
+        f"Teléfono: {phone or '—'}\n\n"
         f"{body}\n"
     )
     html = f"""
@@ -204,7 +207,8 @@ def send_contact_message_email(*, name: str, email: str, body: str, message_id: 
     <p>
       {f'<strong>Mensaje:</strong> #{message_id}<br>' if message_id is not None else ''}
       <strong>Nombre:</strong> {escape(name)}<br>
-      <strong>Correo:</strong> {escape(email)}
+      <strong>Correo:</strong> {escape(email)}<br>
+      <strong>Teléfono:</strong> {escape(phone or '—')}
     </p>
     <p>{escape(body).replace(chr(10), '<br>')}</p>
     """

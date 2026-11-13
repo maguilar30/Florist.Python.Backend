@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     admin_password: str = "YadaAdmin123!"
     admin_full_name: str = "Administrador Yada"
 
+    default_company_slug: str = "yada"
+    default_company_name: str = "Floristería Yada"
+
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

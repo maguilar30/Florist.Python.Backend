@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select, update
 
 from app.config import get_settings
-from app.deps import CurrentUser, DbSession
+from app.deps import CurrentCompany, CurrentUser, DbSession
 from app.errors import problem
 from app.mail import send_password_reset_email
 from app.models.customer import Customer
@@ -35,23 +35,26 @@ def _auth_response(user: User) -> AuthResponse:
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest, db: DbSession) -> AuthResponse:
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+def login(payload: LoginRequest, db: DbSession, company: CurrentCompany) -> AuthResponse:
+    user = db.scalar(
+        select(User).where(User.email == payload.email.lower(), User.company_id == company.id)
+    )
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise problem(401, "Invalid credentials", "Email or password is incorrect.")
     return _auth_response(user)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: DbSession) -> AuthResponse:
+def register(payload: RegisterRequest, db: DbSession, company: CurrentCompany) -> AuthResponse:
     email = payload.email.lower()
-    existing = db.scalar(select(User).where(User.email == email))
+    existing = db.scalar(select(User).where(User.email == email, User.company_id == company.id))
     if existing:
         raise problem(409, "Conflict", "An account with this email already exists.")
 
     full_name = payload.full_name.strip()
     phone = payload.phone.strip() if payload.phone else None
     user = User(
+        company_id=company.id,
         email=email,
         full_name=full_name,
         phone=phone,
@@ -60,9 +63,11 @@ def register(payload: RegisterRequest, db: DbSession) -> AuthResponse:
     )
     db.add(user)
 
-    existing_customer = db.scalar(select(Customer).where(Customer.email == email))
+    existing_customer = db.scalar(
+        select(Customer).where(Customer.email == email, Customer.company_id == company.id)
+    )
     if existing_customer is None:
-        db.add(Customer(full_name=full_name, email=email, phone=phone))
+        db.add(Customer(company_id=company.id, full_name=full_name, email=email, phone=phone))
     else:
         existing_customer.full_name = full_name
         if phone:
@@ -79,13 +84,13 @@ def me(current_user: CurrentUser) -> UserOut:
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
-def forgot_password(payload: ForgotPasswordRequest, db: DbSession) -> MessageResponse:
+def forgot_password(payload: ForgotPasswordRequest, db: DbSession, company: CurrentCompany) -> MessageResponse:
     settings = get_settings()
     if not settings.smtp_host and not settings.debug:
         raise problem(503, "Mail not configured", "Email cannot be sent until SMTP is configured.")
 
     email = payload.email.lower()
-    user = db.scalar(select(User).where(User.email == email))
+    user = db.scalar(select(User).where(User.email == email, User.company_id == company.id))
     if user is not None:
         db.execute(
             update(PasswordResetToken)
@@ -99,6 +104,7 @@ def forgot_password(payload: ForgotPasswordRequest, db: DbSession) -> MessageRes
         expires_at = datetime.now(UTC) + timedelta(minutes=get_settings().password_reset_expire_minutes)
         db.add(
             PasswordResetToken(
+                company_id=company.id,
                 user_id=user.id,
                 token_hash=hash_reset_token(raw_token),
                 expires_at=expires_at,
@@ -115,9 +121,14 @@ def forgot_password(payload: ForgotPasswordRequest, db: DbSession) -> MessageRes
 
 
 @router.post("/reset-password", response_model=MessageResponse)
-def reset_password(payload: ResetPasswordRequest, db: DbSession) -> MessageResponse:
+def reset_password(payload: ResetPasswordRequest, db: DbSession, company: CurrentCompany) -> MessageResponse:
     token_hash = hash_reset_token(payload.token.strip())
-    record = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash))
+    record = db.scalar(
+        select(PasswordResetToken).where(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.company_id == company.id,
+        )
+    )
     now = datetime.now(UTC)
     expires_at = record.expires_at if record else None
     if expires_at is not None and expires_at.tzinfo is None:
@@ -126,7 +137,7 @@ def reset_password(payload: ResetPasswordRequest, db: DbSession) -> MessageRespo
         raise problem(400, "Invalid token", "The reset link is invalid or has expired.")
 
     user = db.get(User, record.user_id)
-    if user is None:
+    if user is None or user.company_id != company.id:
         raise problem(400, "Invalid token", "The reset link is invalid or has expired.")
 
     user.hashed_password = hash_password(payload.password)

@@ -25,6 +25,7 @@ def create_access_token(user: User) -> tuple[str, datetime]:
         "sub": user.id,
         "email": user.email,
         "role": user.role,
+        "company_id": user.company_id,
         "exp": expires_at,
     }
     token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
@@ -45,4 +46,5 @@ def user_to_out(user: User) -> UserOut:
         email=user.email,
         full_name=user.full_name,
         roles=[user.role],
+        company_id=user.company_id,
     )

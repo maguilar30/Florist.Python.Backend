@@ -1,10 +1,10 @@
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.deps import AdminUser, CurrentUser, DbSession, OptionalUser
+from app.deps import AdminUser, CurrentCompany, CurrentUser, DbSession, OptionalUser
 from app.errors import problem
 from app.mail import OrderLine, send_order_notification, send_order_status_email
 from app.delivery import DEFAULT_DELIVERY_OPTION, delivery_fee_for
@@ -74,22 +74,27 @@ def _event_out(event: OrderEvent) -> OrderEventOut:
     )
 
 
-def _list_events(db: DbSession, order_id: int) -> list[OrderEventOut]:
+def _list_events(db: DbSession, order_id: int, company_id: str) -> list[OrderEventOut]:
     events = db.scalars(
         select(OrderEvent)
-        .where(OrderEvent.order_id == order_id)
+        .where(OrderEvent.order_id == order_id, OrderEvent.company_id == company_id)
         .order_by(OrderEvent.created_at.asc(), OrderEvent.id.asc())
     )
     return [_event_out(event) for event in events]
 
 
-def _orders_for_account(user: User):
-    return or_(Order.user_id == user.id, Order.customer_email == user.email.lower())
+def _orders_for_account(user: User, company_id: str):
+    return and_(
+        Order.company_id == company_id,
+        or_(Order.user_id == user.id, Order.customer_email == user.email.lower()),
+    )
 
 
-def _get_order(db: DbSession, order_id: int) -> Order:
+def _get_order(db: DbSession, order_id: int, company_id: str) -> Order:
     order = db.scalar(
-        select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
+        select(Order)
+        .options(selectinload(Order.items))
+        .where(Order.id == order_id, Order.company_id == company_id)
     )
     if order is None:
         raise problem(404, "Not found", "Order not found.")
@@ -97,11 +102,15 @@ def _get_order(db: DbSession, order_id: int) -> Order:
 
 
 @router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
-def request_order(payload: OrderRequest, db: DbSession, user: OptionalUser) -> OrderResponse:
+def request_order(
+    payload: OrderRequest, db: DbSession, user: OptionalUser, company: CurrentCompany
+) -> OrderResponse:
     product_ids = [item.product_id for item in payload.items]
     products = {
         product.id: product
-        for product in db.scalars(select(Product).where(Product.id.in_(product_ids)))
+        for product in db.scalars(
+            select(Product).where(Product.id.in_(product_ids), Product.company_id == company.id)
+        )
     }
     missing = sorted({pid for pid in product_ids if pid not in products})
     if missing:
@@ -126,6 +135,7 @@ def request_order(payload: OrderRequest, db: DbSession, user: OptionalUser) -> O
         raise problem(400, "Address required", "A delivery address is required for home delivery.")
 
     order = Order(
+        company_id=company.id,
         user_id=user.id if user else None,
         customer_name=payload.customer_name.strip(),
         customer_email=str(payload.customer_email).lower(),
@@ -139,6 +149,7 @@ def request_order(payload: OrderRequest, db: DbSession, user: OptionalUser) -> O
         total=subtotal + fee,
         items=[
             OrderItem(
+                company_id=company.id,
                 product_id=item.product_id,
                 name=products[item.product_id].name,
                 quantity=item.quantity,
@@ -151,6 +162,7 @@ def request_order(payload: OrderRequest, db: DbSession, user: OptionalUser) -> O
     db.flush()
     record_order_event(
         db,
+        company_id=company.id,
         order_id=order.id,
         event_type=EVENT_CREATED,
         actor=user,
@@ -159,7 +171,7 @@ def request_order(payload: OrderRequest, db: DbSession, user: OptionalUser) -> O
     )
     db.commit()
     db.refresh(order)
-    order = _get_order(db, order.id)
+    order = _get_order(db, order.id, company.id)
 
     try:
         send_order_notification(
@@ -186,22 +198,22 @@ def request_order(payload: OrderRequest, db: DbSession, user: OptionalUser) -> O
 
 
 @router.get("/mine", response_model=list[OrderOut])
-def list_my_orders(user: CurrentUser, db: DbSession) -> list[OrderOut]:
+def list_my_orders(user: CurrentUser, db: DbSession, company: CurrentCompany) -> list[OrderOut]:
     orders = db.scalars(
         select(Order)
         .options(selectinload(Order.items))
-        .where(_orders_for_account(user))
+        .where(_orders_for_account(user, company.id))
         .order_by(Order.created_at.desc(), Order.id.desc())
     )
     return [_order_out(order) for order in orders]
 
 
 @router.get("/mine/{order_id}", response_model=OrderOut)
-def get_my_order(order_id: int, user: CurrentUser, db: DbSession) -> OrderOut:
+def get_my_order(order_id: int, user: CurrentUser, db: DbSession, company: CurrentCompany) -> OrderOut:
     order = db.scalar(
         select(Order)
         .options(selectinload(Order.items))
-        .where(Order.id == order_id, _orders_for_account(user))
+        .where(Order.id == order_id, _orders_for_account(user, company.id))
     )
     if order is None:
         raise problem(404, "Not found", "Order not found.")
@@ -209,35 +221,44 @@ def get_my_order(order_id: int, user: CurrentUser, db: DbSession) -> OrderOut:
 
 
 @router.get("/mine/{order_id}/history", response_model=list[OrderEventOut])
-def get_my_order_history(order_id: int, user: CurrentUser, db: DbSession) -> list[OrderEventOut]:
-    order = db.scalar(select(Order).where(Order.id == order_id, _orders_for_account(user)))
+def get_my_order_history(
+    order_id: int, user: CurrentUser, db: DbSession, company: CurrentCompany
+) -> list[OrderEventOut]:
+    order = db.scalar(select(Order).where(Order.id == order_id, _orders_for_account(user, company.id)))
     if order is None:
         raise problem(404, "Not found", "Order not found.")
-    return _list_events(db, order.id)
+    return _list_events(db, order.id, company.id)
 
 
 @router.get("", response_model=list[OrderOut])
-def list_orders(_admin: AdminUser, db: DbSession) -> list[OrderOut]:
+def list_orders(_admin: AdminUser, db: DbSession, company: CurrentCompany) -> list[OrderOut]:
     orders = db.scalars(
-        select(Order).options(selectinload(Order.items)).order_by(Order.created_at.desc(), Order.id.desc())
+        select(Order)
+        .options(selectinload(Order.items))
+        .where(Order.company_id == company.id)
+        .order_by(Order.created_at.desc(), Order.id.desc())
     )
     return [_order_out(order) for order in orders]
 
 
 @router.get("/{order_id}", response_model=OrderOut)
-def get_order(order_id: int, _admin: AdminUser, db: DbSession) -> OrderOut:
-    return _order_out(_get_order(db, order_id))
+def get_order(order_id: int, _admin: AdminUser, db: DbSession, company: CurrentCompany) -> OrderOut:
+    return _order_out(_get_order(db, order_id, company.id))
 
 
 @router.get("/{order_id}/history", response_model=list[OrderEventOut])
-def get_order_history(order_id: int, _admin: AdminUser, db: DbSession) -> list[OrderEventOut]:
-    _get_order(db, order_id)
-    return _list_events(db, order_id)
+def get_order_history(
+    order_id: int, _admin: AdminUser, db: DbSession, company: CurrentCompany
+) -> list[OrderEventOut]:
+    _get_order(db, order_id, company.id)
+    return _list_events(db, order_id, company.id)
 
 
 @router.put("/{order_id}", response_model=OrderOut)
-def update_order(order_id: int, payload: OrderUpdate, _admin: AdminUser, db: DbSession) -> OrderOut:
-    order = _get_order(db, order_id)
+def update_order(
+    order_id: int, payload: OrderUpdate, _admin: AdminUser, db: DbSession, company: CurrentCompany
+) -> OrderOut:
+    order = _get_order(db, order_id, company.id)
     previous_status = order.status
     if payload.customer_name is not None:
         order.customer_name = payload.customer_name.strip()
@@ -267,6 +288,7 @@ def update_order(order_id: int, payload: OrderUpdate, _admin: AdminUser, db: DbS
     if payload.status is not None and order.status != previous_status:
         record_status_history(
             db,
+            company_id=company.id,
             order_id=order.id,
             previous_status=previous_status,
             new_status=order.status,
@@ -274,7 +296,7 @@ def update_order(order_id: int, payload: OrderUpdate, _admin: AdminUser, db: DbS
             actor_name=_admin.full_name,
         )
     db.commit()
-    order = _get_order(db, order.id)
+    order = _get_order(db, order.id, company.id)
     if payload.status is not None and order.status != previous_status:
         try:
             send_order_status_email(

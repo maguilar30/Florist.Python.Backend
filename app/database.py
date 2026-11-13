@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, inspect, text
@@ -41,7 +42,104 @@ def ensure_schema(bind: Engine) -> None:
         with bind.begin() as connection:
             for statement in statements:
                 connection.execute(text(statement))
+    _ensure_company_tenancy(bind)
+    _ensure_contact_phone(bind)
     _backfill_order_events(bind)
+
+
+def _ensure_contact_phone(bind: Engine) -> None:
+    inspector = inspect(bind)
+    if "contact_messages" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("contact_messages")}
+    if "phone" in columns:
+        return
+    with bind.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE contact_messages ADD COLUMN phone VARCHAR(50) NOT NULL DEFAULT ''")
+        )
+
+
+TENANT_TABLES = (
+    "users",
+    "products",
+    "customers",
+    "orders",
+    "order_items",
+    "order_events",
+    "password_reset_tokens",
+    "contact_messages",
+    "company_contacts",
+)
+
+
+def _ensure_company_tenancy(bind: Engine) -> None:
+    inspector = inspect(bind)
+    tables = set(inspector.get_table_names())
+    if "companies" not in tables:
+        return
+
+    settings = get_settings()
+    slug = settings.default_company_slug.strip().lower()
+    with bind.begin() as connection:
+        row = connection.execute(text("SELECT id FROM companies WHERE slug = :slug"), {"slug": slug}).first()
+        if row is None:
+            company_id = str(uuid.uuid4())
+            connection.execute(
+                text("INSERT INTO companies (id, slug, name) VALUES (:id, :slug, :name)"),
+                {"id": company_id, "slug": slug, "name": settings.default_company_name.strip() or slug},
+            )
+        else:
+            company_id = str(row[0])
+
+        for table in TENANT_TABLES:
+            if table not in tables:
+                continue
+            columns = {column["name"] for column in inspector.get_columns(table)}
+            if "company_id" in columns:
+                continue
+            connection.execute(text(f"ALTER TABLE `{table}` ADD COLUMN company_id VARCHAR(36) NULL"))
+            connection.execute(
+                text(f"UPDATE `{table}` SET company_id = :company_id WHERE company_id IS NULL"),
+                {"company_id": company_id},
+            )
+            connection.execute(text(f"ALTER TABLE `{table}` MODIFY company_id VARCHAR(36) NOT NULL"))
+            connection.execute(text(f"CREATE INDEX ix_{table}_company_id ON `{table}` (company_id)"))
+
+    _ensure_company_email_uniques(bind)
+
+
+def _ensure_company_email_uniques(bind: Engine) -> None:
+    inspector = inspect(bind)
+    statements: list[str] = []
+    for table, constraint in (("users", "uq_users_company_email"), ("customers", "uq_customers_company_email")):
+        if table not in inspector.get_table_names():
+            continue
+        columns = {column["name"] for column in inspector.get_columns(table)}
+        if "company_id" not in columns:
+            continue
+        uniques = inspector.get_unique_constraints(table)
+        indexes = inspector.get_indexes(table)
+        names = {item.get("name") for item in uniques} | {item.get("name") for item in indexes}
+        for unique in uniques:
+            cols = list(unique.get("column_names") or [])
+            name = unique.get("name")
+            if cols == ["email"] and name:
+                statements.append(f"ALTER TABLE `{table}` DROP INDEX `{name}`")
+                names.discard(name)
+        for index in indexes:
+            cols = list(index.get("column_names") or [])
+            name = index.get("name")
+            if index.get("unique") and cols == ["email"] and name:
+                statements.append(f"ALTER TABLE `{table}` DROP INDEX `{name}`")
+                names.discard(name)
+        if constraint not in names:
+            statements.append(f"ALTER TABLE `{table}` ADD UNIQUE INDEX `{constraint}` (company_id, email)")
+    if not statements:
+        return
+    with bind.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
 
 
 def _backfill_order_events(bind: Engine) -> None:
@@ -54,10 +152,11 @@ def _backfill_order_events(bind: Engine) -> None:
             text(
                 """
                 INSERT INTO order_events (
-                    order_id, event_type, from_status, to_status,
+                    company_id, order_id, event_type, from_status, to_status,
                     actor_name, actor_role, message, created_at
                 )
                 SELECT
+                    o.company_id,
                     o.id,
                     'created',
                     NULL,
@@ -78,10 +177,11 @@ def _backfill_order_events(bind: Engine) -> None:
             text(
                 """
                 INSERT INTO order_events (
-                    order_id, event_type, from_status, to_status,
+                    company_id, order_id, event_type, from_status, to_status,
                     actor_name, actor_role, message, created_at
                 )
                 SELECT
+                    o.company_id,
                     o.id,
                     'status_changed',
                     'payment_pending',
@@ -103,10 +203,11 @@ def _backfill_order_events(bind: Engine) -> None:
             text(
                 """
                 INSERT INTO order_events (
-                    order_id, event_type, from_status, to_status,
+                    company_id, order_id, event_type, from_status, to_status,
                     actor_name, actor_role, message, created_at
                 )
                 SELECT
+                    o.company_id,
                     o.id,
                     'completed',
                     NULL,

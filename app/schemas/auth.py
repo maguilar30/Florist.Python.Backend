@@ -22,6 +22,7 @@ class UserOut(CamelModel):
     email: EmailStr
     full_name: str
     roles: list[str]
+    company_id: str
 
 
 class AuthResponse(CamelModel):

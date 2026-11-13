@@ -18,6 +18,7 @@ def actor_role_for(user: User | None) -> str:
 def record_order_event(
     db: Session,
     *,
+    company_id: str,
     order_id: int,
     event_type: str,
     actor: User | None,
@@ -27,6 +28,7 @@ def record_order_event(
     message: str | None = None,
 ) -> OrderEvent:
     event = OrderEvent(
+        company_id=company_id,
         order_id=order_id,
         event_type=event_type,
         from_status=from_status,
@@ -43,6 +45,7 @@ def record_order_event(
 def record_status_history(
     db: Session,
     *,
+    company_id: str,
     order_id: int,
     previous_status: str,
     new_status: str,
@@ -51,6 +54,7 @@ def record_status_history(
 ) -> None:
     record_order_event(
         db,
+        company_id=company_id,
         order_id=order_id,
         event_type=EVENT_STATUS_CHANGED,
         actor=actor,
@@ -61,6 +65,7 @@ def record_status_history(
     if new_status == COMPLETED_ORDER_STATUS and previous_status != COMPLETED_ORDER_STATUS:
         record_order_event(
             db,
+            company_id=company_id,
             order_id=order_id,
             event_type=EVENT_COMPLETED,
             actor=actor,
