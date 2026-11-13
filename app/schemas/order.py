@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import EmailStr, Field
 
-from app.delivery import DELIVERY_OPTIONS
 from app.order_status import ORDER_STATUSES
 from app.schemas.base import CamelModel
 
@@ -18,7 +17,7 @@ OrderStatus = Literal[
     "cancelled",
 ]
 
-DeliveryOption = Literal["pickup", "up_to_2km", "up_to_5km", "over_5km"]
+DeliveryOption = str
 
 
 class OrderItemIn(CamelModel):
@@ -31,7 +30,7 @@ class OrderRequest(CamelModel):
     customer_email: EmailStr
     customer_phone: str = Field(min_length=1, max_length=50)
     delivery_address: str | None = Field(default=None, max_length=512)
-    delivery_option: DeliveryOption = "pickup"
+    delivery_option: DeliveryOption = Field(default="pickup", min_length=1, max_length=50)
     notes: str | None = Field(default=None, max_length=2000)
     items: list[OrderItemIn] = Field(min_length=1)
 
@@ -87,9 +86,8 @@ class OrderUpdate(CamelModel):
     delivery_address: str | None = Field(default=None, max_length=512)
     notes: str | None = None
     status: OrderStatus | None = None
-    delivery_option: DeliveryOption | None = None
+    delivery_option: DeliveryOption | None = Field(default=None, min_length=1, max_length=50)
     total: Decimal | None = Field(default=None, ge=0)
 
 
 assert set(ORDER_STATUSES) == set(OrderStatus.__args__)
-assert set(DELIVERY_OPTIONS) == set(DeliveryOption.__args__)

@@ -9,16 +9,17 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine, ensure_schema
 from app.errors import http_exception_handler, validation_exception_handler
-from app.models import Company, CompanyContact, ContactMessage, Order, OrderEvent, PasswordResetToken, User
+from app.models import Company, CompanyContact, ContactMessage, DeliveryFee, Order, OrderEvent, PasswordResetToken, User
 from app.routers.auth import router as auth_router
 from app.routers.clients import router as clients_router
 from app.routers.contact import router as contact_router
 from app.routers.contact_info import router as contact_info_router
 from app.routers.customers import router as customers_router
+from app.routers.delivery import router as delivery_router
 from app.routers.orders import router as orders_router
 from app.routers.products import router as products_router
 from app.security import hash_password
-from app.seed import ensure_company_contact, ensure_default_company, seed_products_if_empty
+from app.seed import ensure_company_contact, ensure_default_company, ensure_delivery_fees, seed_products_if_empty
 
 settings = get_settings()
 
@@ -43,6 +44,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             db.commit()
         seed_products_if_empty(db, company)
         ensure_company_contact(db, company)
+        ensure_delivery_fees(db, company)
 
     yield
 
@@ -66,6 +68,7 @@ app.include_router(products_router, prefix=settings.api_prefix)
 app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(contact_router, prefix=settings.api_prefix)
 app.include_router(contact_info_router, prefix=settings.api_prefix)
+app.include_router(delivery_router, prefix=settings.api_prefix)
 
 
 @app.get("/", tags=["health"])

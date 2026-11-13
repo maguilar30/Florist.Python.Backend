@@ -239,14 +239,7 @@ Checkout (`POST`) stores the order, then emails `ORDER_NOTIFY_EMAIL`. The order 
 
 Line prices come from the catalog, not the client. `total` = product subtotal + delivery fee.
 
-**Delivery options**
-
-| `deliveryOption` | Fee |
-|------------------|-----|
-| `pickup` | $0 (store pickup) |
-| `up_to_2km` | $5 |
-| `up_to_5km` | $10 |
-| `over_5km` | $20 |
+**Delivery options** live in `delivery_fees` (per company). `GET /api/delivery-fees` is public. `PUT /api/delivery-fees` is Admin and replaces the full list: include `id` to update a row, omit `id` to add one, omit a row to delete it. Each option has `label`, `fee`, and `requiresAddress`. New options get a unique `code` from the label. Checkout looks up the fee for `deliveryOption` by that code. Defaults are seeded only when a company has zero rows (`pickup` $0, `up_to_2km` $5, `up_to_5km` $10, `over_5km` $20). At least one option is required.
 
 **Order statuses** (admin `PUT`): `payment_pending` (default), `paid`, `preparing`, `ready_for_pickup`, `out_for_delivery`, `delivered`, `cancelled`.
 

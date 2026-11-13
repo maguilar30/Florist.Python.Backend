@@ -5,8 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.delivery import DEFAULT_DELIVERY_FEES
 from app.models.company import Company
 from app.models.company_contact import CompanyContact
+from app.models.delivery_fee import DeliveryFee
 from app.models.product import Product
 
 DEFAULT_CONTACT = {
@@ -77,6 +79,27 @@ def ensure_company_contact(db: Session, company: Company) -> CompanyContact:
     db.commit()
     db.refresh(row)
     return row
+
+
+def ensure_delivery_fees(db: Session, company: Company) -> list[DeliveryFee]:
+    existing = list(
+        db.scalars(
+            select(DeliveryFee)
+            .where(DeliveryFee.company_id == company.id)
+            .order_by(DeliveryFee.sort_order, DeliveryFee.id)
+        )
+    )
+    if existing:
+        return existing
+    db.add_all([DeliveryFee(company_id=company.id, **item) for item in DEFAULT_DELIVERY_FEES])
+    db.commit()
+    return list(
+        db.scalars(
+            select(DeliveryFee)
+            .where(DeliveryFee.company_id == company.id)
+            .order_by(DeliveryFee.sort_order, DeliveryFee.id)
+        )
+    )
 
 
 def seed_products_if_empty(db: Session, company: Company) -> None:

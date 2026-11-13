@@ -70,6 +70,7 @@ TENANT_TABLES = (
     "password_reset_tokens",
     "contact_messages",
     "company_contacts",
+    "delivery_fees",
 )
 
 

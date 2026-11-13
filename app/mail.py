@@ -40,6 +40,7 @@ def build_order_email(
     delivery_address: str | None,
     notes: str | None,
     delivery_option: str | None = None,
+    delivery_label: str | None = None,
     delivery_fee: Decimal | None = None,
     lines: list[OrderLine],
 ) -> tuple[str, str, str]:
@@ -68,7 +69,7 @@ def build_order_email(
 
     notes_text = notes.strip() if notes else "—"
     address_text = delivery_address.strip() if delivery_address else "—"
-    delivery_label = DELIVERY_LABELS.get(delivery_option or "", delivery_option or "—")
+    delivery_label = delivery_label or DELIVERY_LABELS.get(delivery_option or "", delivery_option or "—")
     order_line = f"Pedido: #{order_id}\n" if order_id is not None else ""
     text = (
         "Se recibió una solicitud de pedido desde la tienda.\n\n"
@@ -124,6 +125,7 @@ def send_order_notification(
     delivery_address: str | None = None,
     notes: str | None,
     delivery_option: str | None = None,
+    delivery_label: str | None = None,
     delivery_fee: Decimal | None = None,
     lines: list[OrderLine],
 ) -> None:
@@ -136,6 +138,7 @@ def send_order_notification(
         delivery_address=delivery_address,
         notes=notes,
         delivery_option=delivery_option,
+        delivery_label=delivery_label,
         delivery_fee=delivery_fee,
         lines=lines,
     )

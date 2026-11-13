@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.deps import AdminUser, CurrentCompany, CurrentUser, DbSession, OptionalUser
 from app.errors import problem
 from app.mail import OrderLine, send_order_notification, send_order_status_email
-from app.delivery import DEFAULT_DELIVERY_OPTION, delivery_fee_for
+from app.delivery import DEFAULT_DELIVERY_OPTION, delivery_label_for, get_delivery_option
 from app.models.order import Order, OrderEvent, OrderItem
 from app.models.product import Product
 from app.models.user import User
@@ -127,11 +127,12 @@ def request_order(
     ]
     subtotal = sum((line.line_total for line in lines), Decimal("0"))
     try:
-        fee = delivery_fee_for(payload.delivery_option)
+        delivery = get_delivery_option(db, company.id, payload.delivery_option)
     except ValueError:
         raise problem(400, "Invalid delivery", "Unknown delivery option.") from None
+    fee = delivery.fee
     address = _clean(payload.delivery_address)
-    if payload.delivery_option != "pickup" and not address:
+    if delivery.requires_address and not address:
         raise problem(400, "Address required", "A delivery address is required for home delivery.")
 
     order = Order(
@@ -182,6 +183,7 @@ def request_order(
             delivery_address=order.delivery_address,
             notes=order.notes,
             delivery_option=order.delivery_option,
+            delivery_label=delivery_label_for(db, company.id, order.delivery_option),
             delivery_fee=order.delivery_fee,
             lines=lines,
         )
@@ -276,11 +278,12 @@ def update_order(
         order.status = payload.status
     if payload.delivery_option is not None:
         try:
-            order.delivery_fee = delivery_fee_for(payload.delivery_option)
+            delivery = get_delivery_option(db, company.id, payload.delivery_option)
         except ValueError:
             raise problem(400, "Invalid delivery", "Unknown delivery option.") from None
-        order.delivery_option = payload.delivery_option
-        if payload.delivery_option != "pickup" and not _clean(order.delivery_address):
+        order.delivery_fee = delivery.fee
+        order.delivery_option = delivery.code
+        if delivery.requires_address and not _clean(order.delivery_address):
             raise problem(400, "Address required", "A delivery address is required for home delivery.")
         order.total = Decimal(order.subtotal) + order.delivery_fee
     if payload.total is not None:
