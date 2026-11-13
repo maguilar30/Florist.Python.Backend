@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.deps import AdminUser, CurrentCompany, DbSession
 from app.errors import problem
 from app.models.product import Product
+from app.routers.categories import resolve_product_category
 from app.schemas.product import ProductOut, ProductUpsert
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -18,12 +19,12 @@ def _clean(value: str | None) -> str | None:
     return stripped or None
 
 
-def _apply(product: Product, payload: ProductUpsert) -> None:
+def _apply(product: Product, payload: ProductUpsert, company_id: str, db: DbSession) -> None:
     product.name = payload.name.strip()
     product.description = payload.description.strip()
     product.price = Decimal(payload.price)
     product.image_url = _clean(payload.image_url)
-    product.category = _clean(payload.category)
+    product.category = resolve_product_category(db, company_id, payload.category)
     product.in_stock = payload.in_stock
 
 
@@ -49,7 +50,7 @@ def get_product(product_id: int, db: DbSession, company: CurrentCompany) -> Prod
 @router.post("", response_model=ProductOut, status_code=status.HTTP_201_CREATED)
 def create_product(payload: ProductUpsert, _admin: AdminUser, db: DbSession, company: CurrentCompany) -> Product:
     product = Product(company_id=company.id)
-    _apply(product, payload)
+    _apply(product, payload, company.id, db)
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -65,7 +66,7 @@ def update_product(
     company: CurrentCompany,
 ) -> Product:
     product = _get_product(db, product_id, company.id)
-    _apply(product, payload)
+    _apply(product, payload, company.id, db)
     db.commit()
     db.refresh(product)
     return product

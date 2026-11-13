@@ -71,6 +71,7 @@ TENANT_TABLES = (
     "contact_messages",
     "company_contacts",
     "delivery_fees",
+    "product_categories",
 )
 
 

@@ -10,6 +10,7 @@ from app.models.company import Company
 from app.models.company_contact import CompanyContact
 from app.models.delivery_fee import DeliveryFee
 from app.models.product import Product
+from app.models.product_category import ProductCategory
 
 DEFAULT_CONTACT = {
     "heading": "Visítanos o escríbenos",
@@ -98,6 +99,46 @@ def ensure_delivery_fees(db: Session, company: Company) -> list[DeliveryFee]:
             select(DeliveryFee)
             .where(DeliveryFee.company_id == company.id)
             .order_by(DeliveryFee.sort_order, DeliveryFee.id)
+        )
+    )
+
+
+def ensure_product_categories(db: Session, company: Company) -> list[ProductCategory]:
+    existing = list(
+        db.scalars(
+            select(ProductCategory)
+            .where(ProductCategory.company_id == company.id)
+            .order_by(ProductCategory.sort_order, ProductCategory.name, ProductCategory.id)
+        )
+    )
+    if existing:
+        return existing
+    names: list[str] = []
+    seen: set[str] = set()
+    for product in db.scalars(select(Product).where(Product.company_id == company.id)):
+        label = (product.category or "").strip()
+        key = label.casefold()
+        if label and key not in seen:
+            seen.add(key)
+            names.append(label)
+    for item in CATALOG:
+        label = str(item["category"]).strip()
+        key = label.casefold()
+        if label and key not in seen:
+            seen.add(key)
+            names.append(label)
+    db.add_all(
+        [
+            ProductCategory(company_id=company.id, name=name, sort_order=index)
+            for index, name in enumerate(names, start=1)
+        ]
+    )
+    db.commit()
+    return list(
+        db.scalars(
+            select(ProductCategory)
+            .where(ProductCategory.company_id == company.id)
+            .order_by(ProductCategory.sort_order, ProductCategory.name, ProductCategory.id)
         )
     )
 

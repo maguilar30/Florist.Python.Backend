@@ -17,9 +17,16 @@ from app.routers.contact_info import router as contact_info_router
 from app.routers.customers import router as customers_router
 from app.routers.delivery import router as delivery_router
 from app.routers.orders import router as orders_router
+from app.routers.categories import router as categories_router
 from app.routers.products import router as products_router
 from app.security import hash_password
-from app.seed import ensure_company_contact, ensure_default_company, ensure_delivery_fees, seed_products_if_empty
+from app.seed import (
+    ensure_company_contact,
+    ensure_default_company,
+    ensure_delivery_fees,
+    ensure_product_categories,
+    seed_products_if_empty,
+)
 
 settings = get_settings()
 
@@ -43,6 +50,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             )
             db.commit()
         seed_products_if_empty(db, company)
+        ensure_product_categories(db, company)
         ensure_company_contact(db, company)
         ensure_delivery_fees(db, company)
 
@@ -64,6 +72,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(customers_router, prefix=settings.api_prefix)
 app.include_router(clients_router, prefix=settings.api_prefix)
+app.include_router(categories_router, prefix=settings.api_prefix)
 app.include_router(products_router, prefix=settings.api_prefix)
 app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(contact_router, prefix=settings.api_prefix)

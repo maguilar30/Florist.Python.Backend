@@ -166,6 +166,12 @@ Send the token as `Authorization: Bearer <token>`.
 | POST | `/api/products` | Admin | `{ "name", "description?", "price", "imageUrl?", "category?", "inStock?" }` |
 | PUT | `/api/products/{id}` | Admin | same as create |
 | DELETE | `/api/products/{id}` | Admin | — |
+| GET | `/api/product-categories` | No | — |
+| POST | `/api/product-categories` | Admin | `{ "name" }` |
+| PUT | `/api/product-categories/{id}` | Admin | `{ "name" }` |
+| DELETE | `/api/product-categories/{id}` | Admin | — |
+
+Product `category` must match a row in `product_categories` (or be omitted). Renaming a category updates products that used the old name; deleting one clears that field on those products. Missing category rows are seeded from existing product names (and the default catalog) when a company has none.
 
 ### Customers (CRM) and clients (registered accounts)
 
@@ -296,6 +302,7 @@ On startup, SQLAlchemy creates (or extends):
 - **users** — accounts (`id` UUID, email, hashed password, role `Admin` or `Customer`)
 - **password_reset_tokens** — hashed, single-use reset links with expiry
 - **products** — catalog (name, description, price, image, category, stock)
+- **product_categories** — named catalog groups per company
 - **customers** — CRM records (name, email, phone, address, notes)
 - **orders** — checkout requests (contact, address, status, delivery option/fee, subtotal, total)
 - **order_items** — line snapshots (product name, quantity, unit price)
