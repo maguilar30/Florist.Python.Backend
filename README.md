@@ -219,6 +219,7 @@ One row per company (`company_contacts`). Missing rows are created with the defa
 | Method | Path | Auth |
 |--------|------|------|
 | POST | `/api/orders` | No |
+| POST | `/api/orders/admin` | Admin |
 | GET | `/api/orders/mine` | JWT |
 | GET | `/api/orders/mine/{id}` | JWT |
 | GET | `/api/orders/mine/{id}/history` | JWT |
@@ -226,8 +227,14 @@ One row per company (`company_contacts`). Missing rows are created with the defa
 | GET | `/api/orders/{id}` | Admin |
 | GET | `/api/orders/{id}/history` | Admin |
 | PUT | `/api/orders/{id}` | Admin |
+| GET / POST / PUT / DELETE | `/api/discount-codes` | Admin |
+| POST | `/api/discount-codes/preview` | No (optional JWT) |
+| GET | `/api/loyalty/me` | JWT |
+| GET | `/api/loyalty/accounts/{userId}` | Admin |
+| GET | `/api/loyalty/members` | Admin |
+| GET / POST / PUT / DELETE | `/api/loyalty/rewards` | Admin |
 
-Checkout (`POST`) stores the order, then emails `ORDER_NOTIFY_EMAIL`. The order is saved even if mail fails. Home delivery requires `deliveryAddress`. If the shopper is logged in, the order is linked to their user id. `GET /api/orders/mine` returns orders for that user id **or** the same email as the account (so guest checkouts still appear after they register).
+Checkout (`POST`) stores the order, then emails `ORDER_NOTIFY_EMAIL`. The order is saved even if mail fails. Home delivery requires `deliveryAddress`. If the shopper is logged in, the order is linked to their user id. `GET /api/orders/mine` returns orders for that user id **or** the same email as the account (so guest checkouts still appear after they register). Admins can place an order for someone else with `POST /api/orders/admin` (same body plus optional `userId`); the order is linked to that customer account, not the admin, and history records the administrator as the actor.
 
 **Checkout body:**
 
@@ -243,7 +250,9 @@ Checkout (`POST`) stores the order, then emails `ORDER_NOTIFY_EMAIL`. The order 
 }
 ```
 
-Line prices come from the catalog, not the client. `total` = product subtotal + delivery fee.
+Line prices come from the catalog, not the client. `total` = product subtotal − discount − loyalty discount + delivery fee.
+
+**Loyalty** is for registered accounts only. A star is added when an order with a `userId` is marked `delivered` (`Entregado`) and removed if that status changes to anything else. Admins configure rewards (`name`, `description`, `ordersRequired`, `kind`: `percent` | `free_delivery` | `custom`). After N stars the customer can redeem on a later checkout (`loyaltyRewardId`). Promo codes and loyalty rewards cannot be combined.
 
 **Delivery options** live in `delivery_fees` (per company). `GET /api/delivery-fees` is public. `PUT /api/delivery-fees` is Admin and replaces the full list: include `id` to update a row, omit `id` to add one, omit a row to delete it. Each option has `label`, `fee`, and `requiresAddress`. New options get a unique `code` from the label. Checkout looks up the fee for `deliveryOption` by that code. Defaults are seeded only when a company has zero rows (`pickup` $0, `up_to_2km` $5, `up_to_5km` $10, `over_5km` $20). At least one option is required.
 
@@ -304,7 +313,11 @@ On startup, SQLAlchemy creates (or extends):
 - **products** — catalog (name, description, price, image, category, stock)
 - **product_categories** — named catalog groups per company
 - **customers** — CRM records (name, email, phone, address, notes)
-- **orders** — checkout requests (contact, address, status, delivery option/fee, subtotal, total)
+- **orders** — checkout requests (contact, address, status, delivery option/fee, discount, subtotal, total)
+- **discount_codes** — promo codes (percent, max discount, max redemptions, expiry, description)
+- **discount_code_redemptions** — one use per customer email (and user) per code; overall uses cannot exceed `maxRedemptions`
+- **loyalty_rewards** — punch-card rewards (orders required, kind, percent/max for discounts)
+- **loyalty_redemptions** — registered-user redemptions of a loyalty reward on an order
 - **order_items** — line snapshots (product name, quantity, unit price)
 - **order_events** — history (created, status_changed, completed) with actor and timestamp
 - **contact_messages** — contact form submissions (name, email, message, read_at)

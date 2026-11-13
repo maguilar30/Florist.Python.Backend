@@ -28,7 +28,7 @@ class OrderLine:
 
 
 def _money(value: Decimal) -> str:
-    return f"${value.quantize(Decimal('0.01'))}"
+    return f"₡{value.quantize(Decimal('0.01')):,.2f}"
 
 
 def build_order_email(
@@ -42,11 +42,17 @@ def build_order_email(
     delivery_option: str | None = None,
     delivery_label: str | None = None,
     delivery_fee: Decimal | None = None,
+    discount_code: str | None = None,
+    discount_amount: Decimal | None = None,
+    loyalty_reward: str | None = None,
+    loyalty_discount_amount: Decimal | None = None,
     lines: list[OrderLine],
 ) -> tuple[str, str, str]:
     subtotal = sum((line.line_total for line in lines), Decimal("0"))
     fee = delivery_fee if delivery_fee is not None else Decimal("0")
-    total = subtotal + fee
+    discount = discount_amount if discount_amount is not None else Decimal("0")
+    loyalty_discount = loyalty_discount_amount if loyalty_discount_amount is not None else Decimal("0")
+    total = subtotal - discount - loyalty_discount + fee
     ref = f"#{order_id} — " if order_id is not None else ""
     subject = f"Nuevo pedido {ref}{customer_name} — {_money(total)}"
 
@@ -83,6 +89,12 @@ def build_order_email(
         "Artículos:\n"
         + "\n".join(item_lines)
         + f"\n\nSubtotal: {_money(subtotal)}\n"
+        + (f"Descuento ({discount_code}): -{_money(discount)}\n" if discount > 0 and discount_code else "")
+        + (
+            f"Fidelidad ({loyalty_reward}): -{_money(loyalty_discount)}\n"
+            if loyalty_reward and loyalty_discount > 0
+            else (f"Fidelidad: {loyalty_reward}\n" if loyalty_reward else "")
+        )
         + f"Envío: {_money(fee)}\n"
         + f"Total: {_money(total)}\n"
         "El cliente espera que lo contacten para coordinar el pago.\n"
@@ -108,6 +120,8 @@ def build_order_email(
     </table>
     <p>
       <strong>Subtotal:</strong> {_money(subtotal)}<br>
+      {f'<strong>Descuento ({escape(discount_code)}):</strong> -{_money(discount)}<br>' if discount > 0 and discount_code else ''}
+      {f'<strong>Fidelidad ({escape(loyalty_reward)}):</strong> -{_money(loyalty_discount)}<br>' if loyalty_reward and loyalty_discount > 0 else (f'<strong>Fidelidad:</strong> {escape(loyalty_reward)}<br>' if loyalty_reward else '')}
       <strong>Envío:</strong> {_money(fee)}<br>
       <strong>Total:</strong> {_money(total)}
     </p>
@@ -127,6 +141,10 @@ def send_order_notification(
     delivery_option: str | None = None,
     delivery_label: str | None = None,
     delivery_fee: Decimal | None = None,
+    discount_code: str | None = None,
+    discount_amount: Decimal | None = None,
+    loyalty_reward: str | None = None,
+    loyalty_discount_amount: Decimal | None = None,
     lines: list[OrderLine],
 ) -> None:
     settings = get_settings()
@@ -140,6 +158,10 @@ def send_order_notification(
         delivery_option=delivery_option,
         delivery_label=delivery_label,
         delivery_fee=delivery_fee,
+        discount_code=discount_code,
+        discount_amount=discount_amount,
+        loyalty_reward=loyalty_reward,
+        loyalty_discount_amount=loyalty_discount_amount,
         lines=lines,
     )
     send_email(

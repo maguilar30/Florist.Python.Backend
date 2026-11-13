@@ -11,4 +11,5 @@ class ClientOut(CamelModel):
     full_name: str
     phone: str | None = None
     roles: list[str]
+    stars: int = 0
     created_at: datetime | None = None

@@ -32,7 +32,13 @@ class OrderRequest(CamelModel):
     delivery_address: str | None = Field(default=None, max_length=512)
     delivery_option: DeliveryOption = Field(default="pickup", min_length=1, max_length=50)
     notes: str | None = Field(default=None, max_length=2000)
+    discount_code: str | None = Field(default=None, max_length=40)
+    loyalty_reward_id: int | None = Field(default=None, ge=1)
     items: list[OrderItemIn] = Field(min_length=1)
+
+
+class AdminOrderRequest(OrderRequest):
+    user_id: str | None = Field(default=None, max_length=36)
 
 
 class OrderItemOut(CamelModel):
@@ -66,6 +72,10 @@ class OrderOut(CamelModel):
     delivery_option: str
     subtotal: float
     delivery_fee: float
+    discount_code: str | None = None
+    discount_amount: float = 0
+    loyalty_reward: str | None = None
+    loyalty_discount_amount: float = 0
     total: float
     items: list[OrderItemOut]
     created_at: datetime | None = None

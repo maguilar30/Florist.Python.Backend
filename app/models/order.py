@@ -35,6 +35,16 @@ class Order(Base):
     )
     subtotal: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
     delivery_fee: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    discount_code_id: Mapped[int | None] = mapped_column(
+        ForeignKey("discount_codes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    discount_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    discount_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    loyalty_reward_id: Mapped[int | None] = mapped_column(
+        ForeignKey("loyalty_rewards.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    loyalty_reward: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    loyalty_discount_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
     total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

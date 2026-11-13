@@ -3,19 +3,21 @@ from sqlalchemy import func, select
 
 from app.deps import AdminUser, CurrentCompany, DbSession
 from app.errors import problem
+from app.loyalty import star_count
 from app.models.user import User
 from app.schemas.client import ClientOut
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
 
-def _to_out(user: User) -> ClientOut:
+def _to_out(user: User, db: DbSession, company_id: str) -> ClientOut:
     return ClientOut(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
         phone=user.phone,
         roles=[user.role],
+        stars=star_count(db, company_id, user.id),
         created_at=user.created_at,
     )
 
@@ -27,7 +29,7 @@ def _customer_accounts(company_id: str):
 @router.get("", response_model=list[ClientOut])
 def list_clients(_admin: AdminUser, db: DbSession, company: CurrentCompany) -> list[ClientOut]:
     users = db.scalars(_customer_accounts(company.id).order_by(User.full_name, User.email))
-    return [_to_out(user) for user in users]
+    return [_to_out(user, db, company.id) for user in users]
 
 
 @router.get("/{client_id}", response_model=ClientOut)
@@ -35,4 +37,4 @@ def get_client(client_id: str, _admin: AdminUser, db: DbSession, company: Curren
     user = db.scalar(_customer_accounts(company.id).where(User.id == client_id))
     if user is None:
         raise problem(404, "Not found", "Client account not found.")
-    return _to_out(user)
+    return _to_out(user, db, company.id)

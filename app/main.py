@@ -16,6 +16,8 @@ from app.routers.contact import router as contact_router
 from app.routers.contact_info import router as contact_info_router
 from app.routers.customers import router as customers_router
 from app.routers.delivery import router as delivery_router
+from app.routers.discounts import router as discounts_router
+from app.routers.loyalty import router as loyalty_router
 from app.routers.orders import router as orders_router
 from app.routers.categories import router as categories_router
 from app.routers.products import router as products_router
@@ -78,6 +80,8 @@ app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(contact_router, prefix=settings.api_prefix)
 app.include_router(contact_info_router, prefix=settings.api_prefix)
 app.include_router(delivery_router, prefix=settings.api_prefix)
+app.include_router(discounts_router, prefix=settings.api_prefix)
+app.include_router(loyalty_router, prefix=settings.api_prefix)
 
 
 @app.get("/", tags=["health"])

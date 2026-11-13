@@ -38,13 +38,41 @@ def ensure_schema(bind: Engine) -> None:
     if "user_id" not in columns:
         statements.append("ALTER TABLE orders ADD COLUMN user_id VARCHAR(36) NULL")
         statements.append("CREATE INDEX ix_orders_user_id ON orders (user_id)")
+    if "discount_code_id" not in columns:
+        statements.append("ALTER TABLE orders ADD COLUMN discount_code_id INT NULL")
+        statements.append("CREATE INDEX ix_orders_discount_code_id ON orders (discount_code_id)")
+    if "discount_code" not in columns:
+        statements.append("ALTER TABLE orders ADD COLUMN discount_code VARCHAR(40) NULL")
+    if "discount_amount" not in columns:
+        statements.append("ALTER TABLE orders ADD COLUMN discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0")
+    if "loyalty_reward_id" not in columns:
+        statements.append("ALTER TABLE orders ADD COLUMN loyalty_reward_id INT NULL")
+        statements.append("CREATE INDEX ix_orders_loyalty_reward_id ON orders (loyalty_reward_id)")
+    if "loyalty_reward" not in columns:
+        statements.append("ALTER TABLE orders ADD COLUMN loyalty_reward VARCHAR(120) NULL")
+    if "loyalty_discount_amount" not in columns:
+        statements.append("ALTER TABLE orders ADD COLUMN loyalty_discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0")
     if statements:
         with bind.begin() as connection:
             for statement in statements:
                 connection.execute(text(statement))
     _ensure_company_tenancy(bind)
     _ensure_contact_phone(bind)
+    _ensure_discount_max_redemptions(bind)
     _backfill_order_events(bind)
+
+
+def _ensure_discount_max_redemptions(bind: Engine) -> None:
+    inspector = inspect(bind)
+    if "discount_codes" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("discount_codes")}
+    if "max_redemptions" in columns:
+        return
+    with bind.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE discount_codes ADD COLUMN max_redemptions INT NOT NULL DEFAULT 100")
+        )
 
 
 def _ensure_contact_phone(bind: Engine) -> None:
@@ -72,6 +100,10 @@ TENANT_TABLES = (
     "company_contacts",
     "delivery_fees",
     "product_categories",
+    "discount_codes",
+    "discount_code_redemptions",
+    "loyalty_rewards",
+    "loyalty_redemptions",
 )
 
 
