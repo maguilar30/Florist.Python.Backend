@@ -1,6 +1,6 @@
 # Floristería Yada — Python API
 
-Backend for the **Floristería Yada** React SPA (`../client`). Built with **FastAPI**, **SQLAlchemy 2**, and **MySQL**. JSON uses **camelCase** so it matches the SPA (`fullName`, `expiresAt`, `imageUrl`, `inStock`).
+Backend for the **Floristería Yada** React SPA (`../client`). Built with **FastAPI**, **SQLAlchemy 2**, and **MySQL**. JSON uses **camelCase** so it matches the SPA (`fullName`, `expiresAt`, `imageUrl`, `stockQuantity`, `inStock`).
 
 ## Requirements
 
@@ -163,7 +163,7 @@ Send the token as `Authorization: Bearer <token>`.
 |--------|------|------|------|
 | GET | `/api/products` | No | — |
 | GET | `/api/products/{id}` | No | — |
-| POST | `/api/products` | Admin | `{ "name", "description?", "price", "imageUrl?", "category?", "inStock?" }` |
+| POST | `/api/products` | Admin | `{ "name", "description?", "price", "imageUrl?", "category?", "stockQuantity" }` |
 | PUT | `/api/products/{id}` | Admin | same as create |
 | DELETE | `/api/products/{id}` | Admin | — |
 | GET | `/api/product-categories` | No | — |
@@ -255,6 +255,8 @@ Line prices come from the catalog, not the client. `total` = product subtotal �
 **Loyalty** is for registered accounts only. A star is added when an order with a `userId` is marked `delivered` (`Entregado`) and removed if that status changes to anything else. Admins configure rewards (`name`, `description`, `ordersRequired`, `kind`: `percent` | `free_delivery` | `custom`). After N stars the customer can redeem on a later checkout (`loyaltyRewardId`). Promo codes and loyalty rewards cannot be combined.
 
 **Delivery options** live in `delivery_fees` (per company). `GET /api/delivery-fees` is public. `PUT /api/delivery-fees` is Admin and replaces the full list: include `id` to update a row, omit `id` to add one, omit a row to delete it. Each option has `label`, `fee`, and `requiresAddress`. New options get a unique `code` from the label. Checkout looks up the fee for `deliveryOption` by that code. Defaults are seeded only when a company has zero rows (`pickup` $0, `up_to_2km` $5, `up_to_5km` $10, `over_5km` $20). At least one option is required.
+
+**Inventory:** each product has `stockQuantity` (integer). `inStock` is derived (`stockQuantity > 0`). Placing an order (checkout or admin **Nuevo pedido**) deducts the ordered quantities. Changing status **to** `cancelled` restores those units; leaving `cancelled` for another status deducts them again (409 if there is not enough stock). Existing in-stock catalog rows receive `stockQuantity = 10` when the column is first added.
 
 **Order statuses** (admin `PUT`): `payment_pending` (default), `paid`, `preparing`, `ready_for_pickup`, `out_for_delivery`, `delivered`, `cancelled`.
 

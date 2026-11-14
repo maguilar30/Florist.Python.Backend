@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.deps import AdminUser, CurrentCompany, DbSession
 from app.errors import problem
+from app.inventory import set_stock
 from app.models.product import Product
 from app.routers.categories import resolve_product_category
 from app.schemas.product import ProductOut, ProductUpsert
@@ -25,7 +26,7 @@ def _apply(product: Product, payload: ProductUpsert, company_id: str, db: DbSess
     product.price = Decimal(payload.price)
     product.image_url = _clean(payload.image_url)
     product.category = resolve_product_category(db, company_id, payload.category)
-    product.in_stock = payload.in_stock
+    set_stock(product, payload.stock_quantity)
 
 
 def _get_product(db: DbSession, product_id: int, company_id: str) -> Product:

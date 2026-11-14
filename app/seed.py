@@ -33,6 +33,7 @@ CATALOG = [
         "price": Decimal("45.00"),
         "image_url": "https://images.unsplash.com/photo-1561181286-d425a7aae625?w=600&q=80",
         "category": "Ramos",
+        "stock_quantity": 10,
         "in_stock": True,
     },
     {
@@ -41,6 +42,7 @@ CATALOG = [
         "price": Decimal("38.00"),
         "image_url": "https://images.unsplash.com/photo-1518895949257-7621c3c786d4?w=600&q=80",
         "category": "Ramos",
+        "stock_quantity": 10,
         "in_stock": True,
     },
     {
@@ -49,6 +51,7 @@ CATALOG = [
         "price": Decimal("62.00"),
         "image_url": "https://images.unsplash.com/photo-1582794543130-2821d68895e2?w=600&q=80",
         "category": "Plantas",
+        "stock_quantity": 10,
         "in_stock": True,
     },
 ]

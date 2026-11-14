@@ -8,13 +8,13 @@ from sqlalchemy.orm import selectinload
 from app.deps import AdminUser, CurrentCompany, CurrentUser, DbSession, OptionalUser
 from app.discount import apply_discount
 from app.errors import problem
+from app.inventory import reserve_stock, restore_stock
 from app.loyalty import apply_loyalty
 from app.mail import OrderLine, send_order_notification, send_order_status_email
 from app.delivery import DEFAULT_DELIVERY_OPTION, delivery_label_for, get_delivery_option
 from app.models.discount_code import DiscountRedemption
 from app.models.loyalty import LoyaltyRedemption
 from app.models.order import Order, OrderEvent, OrderItem
-from app.models.product import Product
 from app.models.user import User
 from app.order_history import EVENT_CREATED, record_order_event, record_status_history
 from app.order_status import DEFAULT_ORDER_STATUS, ORDER_STATUSES
@@ -127,23 +127,16 @@ def _place_order(
     actor: User | None,
     created_message: str | None = None,
 ) -> OrderResponse:
-    product_ids = [item.product_id for item in payload.items]
-    products = {
-        product.id: product
-        for product in db.scalars(
-            select(Product).where(Product.id.in_(product_ids), Product.company_id == company_id)
-        )
-    }
-    missing = sorted({pid for pid in product_ids if pid not in products})
-    if missing:
-        raise problem(400, "Invalid cart", "One or more products in the cart are no longer available.")
+    products = reserve_stock(
+        db, company_id, [(item.product_id, item.quantity) for item in payload.items]
+    )
 
     lines = [
         OrderLine(
             name=products[item.product_id].name,
             quantity=item.quantity,
             unit_price=products[item.product_id].price,
-            in_stock=products[item.product_id].in_stock,
+            in_stock=True,
         )
         for item in payload.items
     ]
@@ -369,6 +362,14 @@ def update_order(
     if payload.status is not None:
         if payload.status not in ORDER_STATUSES:
             raise problem(400, "Invalid status", "Unknown order status.")
+        if previous_status != "cancelled" and payload.status == "cancelled":
+            restore_stock(db, company.id, order.items)
+        elif previous_status == "cancelled" and payload.status != "cancelled":
+            reserve_stock(
+                db,
+                company.id,
+                [(item.product_id, item.quantity) for item in order.items if item.product_id is not None],
+            )
         order.status = payload.status
     if payload.delivery_option is not None:
         try:

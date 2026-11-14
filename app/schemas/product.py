@@ -12,6 +12,7 @@ class ProductOut(CamelModel):
     price: float
     image_url: str | None = None
     category: str | None = None
+    stock_quantity: int
     in_stock: bool
 
 
@@ -21,4 +22,4 @@ class ProductUpsert(CamelModel):
     price: Decimal = Field(gt=0)
     image_url: str | None = Field(default=None, max_length=512)
     category: str | None = Field(default=None, max_length=100)
-    in_stock: bool = True
+    stock_quantity: int = Field(ge=0, le=1_000_000)

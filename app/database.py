@@ -59,7 +59,25 @@ def ensure_schema(bind: Engine) -> None:
     _ensure_company_tenancy(bind)
     _ensure_contact_phone(bind)
     _ensure_discount_max_redemptions(bind)
+    _ensure_product_stock_quantity(bind)
     _backfill_order_events(bind)
+
+
+def _ensure_product_stock_quantity(bind: Engine) -> None:
+    inspector = inspect(bind)
+    if "products" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("products")}
+    if "stock_quantity" in columns:
+        return
+    with bind.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE products ADD COLUMN stock_quantity INT NOT NULL DEFAULT 0")
+        )
+        if "in_stock" in columns:
+            connection.execute(
+                text("UPDATE products SET stock_quantity = 10 WHERE in_stock = 1 AND stock_quantity = 0")
+            )
 
 
 def _ensure_discount_max_redemptions(bind: Engine) -> None:
