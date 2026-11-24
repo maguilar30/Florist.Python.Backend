@@ -126,11 +126,14 @@ To serve another shop, insert a row in `companies` and point a second SPA at tha
 | POST | `/api/auth/register` | No | `{ "email", "password", "fullName", "phone?" }` |
 | POST | `/api/auth/forgot-password` | No | `{ "email" }` |
 | POST | `/api/auth/reset-password` | No | `{ "token", "password" }` |
+| POST | `/api/auth/change-password` | JWT | `{ "currentPassword", "newPassword" }` |
 | GET | `/api/auth/me` | JWT | — |
 
 Register requires a password of at least 8 characters. New accounts get role `Customer` and a matching CRM row in `customers`.
 
 Forgot-password always returns the same message (it does not reveal whether the email exists). If the account exists, the API emails a one-hour link to `{FRONTEND_URL}/restablecer-contrasena?token=...`. The raw token is never stored; only a SHA-256 hash is kept in `password_reset_tokens`.
+
+Signed-in users change their password from **Mi cuenta** with `POST /api/auth/change-password`. The current password must match; the new password must be at least 8 characters and different from the current one. Unused reset tokens for that user are invalidated.
 
 **Login / register response:**
 
@@ -152,7 +155,7 @@ Send the token as `Authorization: Bearer <token>`.
 
 **Try it in Swagger**
 
-1. `POST /api/auth/login` with `admin@yadacr.com` / `YadaAdmin123!` (first empty database).
+1. `POST /api/auth/login` with `admin@yadacr.com` / `` (first empty database).
 2. Copy `token`.
 3. Click **Authorize** and enter `Bearer <token>`.
 4. Call `GET /api/auth/me`.

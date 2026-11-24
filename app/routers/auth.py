@@ -13,6 +13,7 @@ from app.models.password_reset import PasswordResetToken
 from app.models.user import User
 from app.schemas.auth import (
     AuthResponse,
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     LoginRequest,
     MessageResponse,
@@ -153,3 +154,24 @@ def reset_password(payload: ResetPasswordRequest, db: DbSession, company: Curren
     )
     db.commit()
     return MessageResponse(message="Tu contraseña se actualizó. Ya puedes iniciar sesión.")
+
+
+@router.post("/change-password", response_model=MessageResponse)
+def change_password(
+    payload: ChangePasswordRequest, current_user: CurrentUser, db: DbSession
+) -> MessageResponse:
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise problem(400, "Contraseña actual incorrecta", "La contraseña actual no es correcta.")
+    if payload.current_password == payload.new_password:
+        raise problem(400, "Contraseña inválida", "La nueva contraseña debe ser distinta a la actual.")
+    current_user.hashed_password = hash_password(payload.new_password)
+    db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == current_user.id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=datetime.now(UTC))
+    )
+    db.commit()
+    return MessageResponse(message="Tu contraseña se actualizó.")

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     admin_email: str = "admin@yadacr.com"
-    admin_password: str = "YadaAdmin123!"
+    admin_password: str = ""
     admin_full_name: str = "Administrador Yada"
 
     default_company_slug: str = "yada"
